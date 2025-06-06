@@ -1,0 +1,8 @@
+python-telegram-bot
+scrapegraphai
+airtable-python-wrapper
+python-dotenv
+beautifulsoup4
+lxml
+openai
+playwright 
