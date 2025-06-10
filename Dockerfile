@@ -35,9 +35,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
+# Install Playwright browsers and dependencies
 RUN playwright install-deps chromium
+RUN playwright install chromium
+RUN playwright install chromium-headless-shell
 
 # Copy the bot code
 COPY bot.py .
@@ -45,6 +46,7 @@ COPY bot.py .
 # Set environment variables for production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Run the bot
 CMD ["python", "bot.py"] 

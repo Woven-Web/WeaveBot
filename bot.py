@@ -107,7 +107,18 @@ async def get_html_with_playwright(url: str) -> str:
     html_content = ""
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu'
+                ]
+            )
             page = await browser.new_page()
             # Wait for network to be idle, a good signal for SPAs
             await page.goto(url, wait_until="networkidle", timeout=10000)
