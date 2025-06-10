@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: weave-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: AIRTABLE_API_KEY
+        sync: false
+      - key: AIRTABLE_BASE_ID
+        sync: false
+      - key: AIRTABLE_TABLE_ID
+        sync: false
+      - key: AIRTABLE_VIEW_ID
+        sync: false
+      - key: AIRTABLE_TABLE_NAME
+        sync: false
+      - key: AIRTABLE_UPDATES_TABLE_NAME
+        sync: false
+      - key: AIRTABLE_UPDATES_TABLE_ID
+        sync: false
+      - key: AIRTABLE_UPDATES_VIEW_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false 

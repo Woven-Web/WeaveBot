@@ -11,7 +11,8 @@ from telegram.constants import ParseMode
 from scrapegraphai.graphs import SmartScraperGraph
 from airtable import Airtable
 
-# Load environment variables from .env file
+# Load environment variables from .env file (for local development)
+# In production (Render), environment variables are provided directly
 load_dotenv()
 
 # Set up logging
