@@ -346,59 +346,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the /start command is issued."""
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Hello! I'm a bot to help you scrape events and add them to Airtable.")
 
-async def start_bot_with_retry():
-    """Start the bot with retry logic for conflicts."""
-    max_retries = 5
-    base_delay = 5  # seconds
+async def start_bot():
+    """Start the bot."""
+    # Clean up any webhooks/pending updates first
+    await cleanup_webhook_and_pending_updates()
     
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Starting bot (attempt {attempt + 1}/{max_retries})...")
-            
-            # Clean up any webhooks/pending updates first
-            await cleanup_webhook_and_pending_updates()
-            
-            # Add a delay to ensure any other instances are fully stopped
-            if attempt > 0:
-                delay = base_delay * (2 ** attempt)  # Exponential backoff
-                logger.info(f"Waiting {delay} seconds before retry...")
-                await asyncio.sleep(delay)
-            
-            application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-            start_handler = CommandHandler('start', start)
-            application.add_handler(start_handler)
+    start_handler = CommandHandler('start', start)
+    application.add_handler(start_handler)
 
-            weave_handler = CommandHandler('weeklyweave', weekly_weave)
-            application.add_handler(weave_handler)
+    weave_handler = CommandHandler('weeklyweave', weekly_weave)
+    application.add_handler(weave_handler)
 
-            message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
-            application.add_handler(message_handler)
+    message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+    application.add_handler(message_handler)
 
-            logger.info("Bot started and listening for messages...")
-            
-            # Start polling with retry on conflicts - use close_loop=True to properly close
-            await application.run_polling(
-                drop_pending_updates=True,
-                close_loop=True,
-                stop_signals=[signal.SIGINT, signal.SIGTERM]
-            )
-            
-            break  # If we get here, polling started successfully
-            
-        except Conflict as e:
-            logger.warning(f"Conflict detected on attempt {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                logger.error("Max retries reached. Another bot instance might be running.")
-                raise
-        except (TimedOut, NetworkError) as e:
-            logger.warning(f"Network error on attempt {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                raise
+    logger.info("Bot started and listening for messages...")
+    
+    # Start polling
+    await application.run_polling(
+        drop_pending_updates=True,
+        stop_signals=[signal.SIGINT, signal.SIGTERM]
+    )
 
 def main():
     """Start the bot."""
@@ -414,7 +384,7 @@ def main():
 
 
     try:
-        asyncio.run(start_bot_with_retry())
+        asyncio.run(start_bot())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
