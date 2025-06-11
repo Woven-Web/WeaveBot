@@ -7,9 +7,10 @@ import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
+from telegram.error import Conflict, TimedOut, NetworkError
 from scrapegraphai.graphs import SmartScraperGraph
 from airtable import Airtable
 
@@ -322,9 +323,89 @@ async def weekly_weave(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN_V2 # Use V2 for safer parsing of user content
     )
 
+async def cleanup_webhook_and_pending_updates():
+    """Clean up any existing webhooks and pending updates before starting polling."""
+    try:
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        
+        # Delete webhook to ensure we can use polling
+        logger.info("Cleaning up webhook...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        
+        # Wait a moment for cleanup
+        await asyncio.sleep(2)
+        
+        logger.info("Webhook cleanup completed")
+        
+    except Exception as e:
+        logger.warning(f"Webhook cleanup failed (this might be normal): {e}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the /start command is issued."""
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Hello! I'm a bot to help you scrape events and add them to Airtable.")
+
+async def start_bot_with_retry():
+    """Start the bot with retry logic for conflicts."""
+    max_retries = 5
+    base_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Starting bot (attempt {attempt + 1}/{max_retries})...")
+            
+            # Clean up any webhooks/pending updates first
+            await cleanup_webhook_and_pending_updates()
+            
+            # Add a delay to ensure any other instances are fully stopped
+            if attempt > 0:
+                delay = base_delay * (2 ** attempt)  # Exponential backoff
+                logger.info(f"Waiting {delay} seconds before retry...")
+                await asyncio.sleep(delay)
+            
+            application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+            start_handler = CommandHandler('start', start)
+            application.add_handler(start_handler)
+
+            weave_handler = CommandHandler('weeklyweave', weekly_weave)
+            application.add_handler(weave_handler)
+
+            message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+            application.add_handler(message_handler)
+
+            # Set up graceful shutdown
+            def signal_handler(sig, frame):
+                logger.info(f"Received signal {sig}. Shutting down gracefully...")
+                application.stop()
+                sys.exit(0)
+
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+
+            logger.info("Bot started and listening for messages...")
+            
+            # Start polling with retry on conflicts
+            await application.run_polling(
+                drop_pending_updates=True,
+                close_loop=False,
+                stop_signals=None  # We handle signals ourselves
+            )
+            
+            break  # If we get here, polling started successfully
+            
+        except Conflict as e:
+            logger.warning(f"Conflict detected on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                logger.error("Max retries reached. Another bot instance might be running.")
+                raise
+        except (TimedOut, NetworkError) as e:
+            logger.warning(f"Network error on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                raise
 
 def main():
     """Start the bot."""
@@ -337,33 +418,10 @@ def main():
         logger.error("Missing one or more required environment variables.")
         return
 
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
-    start_handler = CommandHandler('start', start)
-    application.add_handler(start_handler)
-
-    weave_handler = CommandHandler('weeklyweave', weekly_weave)
-    application.add_handler(weave_handler)
-
-    message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
-    application.add_handler(message_handler)
-
-    # Set up graceful shutdown
-    def signal_handler(sig, frame):
-        logger.info(f"Received signal {sig}. Shutting down gracefully...")
-        application.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    logger.info("Bot started and listening for messages...")
-    
     try:
-        application.run_polling(
-            drop_pending_updates=True,  # Clear any pending updates from previous instances
-            close_loop=False
-        )
+        asyncio.run(start_bot_with_retry())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
         sys.exit(1)

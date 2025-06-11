@@ -8,6 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Ensure Playwright browsers are properly installed
+RUN playwright install chromium
+RUN playwright install-deps chromium
+
 # Copy the bot code
 COPY bot.py .
 
@@ -15,5 +19,5 @@ COPY bot.py .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Run the bot
-CMD ["python", "bot.py"] 
+# Add a small delay on startup to ensure old instances are stopped, then run the bot
+CMD ["sh", "-c", "sleep 10 && python bot.py"] 
