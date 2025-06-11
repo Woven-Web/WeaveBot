@@ -1,5 +1,5 @@
 # Use official Playwright image with browsers pre-installed
-FROM mcr.microsoft.com/playwright/python:v1.52.0-focal
+FROM mcr.microsoft.com/playwright/python:v1.52.0-noble
 
 # Set working directory
 WORKDIR /app
@@ -19,9 +19,9 @@ RUN playwright install chromium --with-deps
 # Copy the bot code
 COPY bot.py .
 
-# Create a non-root user for security
-RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
-USER botuser
+# Use the existing pwuser from the Playwright image and set permissions
+RUN chown -R pwuser:pwuser /app
+USER pwuser
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
