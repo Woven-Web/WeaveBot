@@ -14,6 +14,7 @@ from telegram.constants import ParseMode
 from telegram.error import Conflict, TimedOut, NetworkError
 from openai import AsyncOpenAI
 from airtable import Airtable
+from bs4 import BeautifulSoup
 
 # Load environment variables from .env file (for local development)
 # In production (Render), environment variables are provided directly
@@ -246,11 +247,14 @@ async def extract_event_data_with_openai(html_content: str, url: str) -> dict:
     - Return null for any field that cannot be found
     - Be precise with date formatting - use ISO 8601 strictly"""
 
+    # Extract only relevant content to reduce tokens
+    relevant_content = extract_relevant_content(html_content, url)
+    
     user_prompt = f"""Today's date is {today_date}. 
 
-    Please extract event information from this HTML content from {url}:
+    Please extract event information from this content from {url}:
 
-    {html_content[:8000]}  # Limit to avoid token limits
+    {relevant_content}
     
     Return only the JSON object with no additional text."""
 
@@ -301,9 +305,12 @@ async def extract_update_data_with_openai(html_content: str, url: str) -> dict:
     
     Focus on the main content and provide a clear, concise summary."""
 
-    user_prompt = f"""Please extract article/update information from this HTML content from {url}:
+    # Extract only relevant content to reduce tokens
+    relevant_content = extract_relevant_content(html_content, url)
+    
+    user_prompt = f"""Please extract article/update information from this content from {url}:
 
-    {html_content[:8000]}  # Limit to avoid token limits
+    {relevant_content}
     
     Return only the JSON object with no additional text."""
 
@@ -673,6 +680,85 @@ def main():
         import traceback
         logger.error(traceback.format_exc())
         sys.exit(1)
+
+def extract_relevant_content(html_content: str, url: str) -> str:
+    """Extract only relevant content from HTML to reduce token usage."""
+    try:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Remove unnecessary elements
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
+            tag.decompose()
+        
+        # Event-specific selectors to prioritize
+        event_selectors = [
+            # Common event page patterns
+            '[class*="event"]', '[id*="event"]',
+            '[class*="title"]', '[id*="title"]', 'h1', 'h2', 'h3',
+            '[class*="description"]', '[id*="description"]',
+            '[class*="date"]', '[id*="date"]', '[class*="time"]', '[id*="time"]',
+            '[class*="location"]', '[id*="location"]', '[class*="venue"]', '[id*="venue"]',
+            '[class*="when"]', '[id*="when"]', '[class*="where"]', '[id*="where"]',
+            '[class*="detail"]', '[id*="detail"]',
+            # Platform-specific selectors
+            '[data-testid*="event"]', '[data-testid*="date"]', '[data-testid*="location"]',
+            # Meetup.com specific
+            '[class*="eventTitle"]', '[class*="eventDescription"]',
+            # Eventbrite specific  
+            '[class*="event-title"]', '[class*="event-description"]',
+            # Lu.ma specific
+            '[class*="event-name"]', '[class*="event-info"]',
+            # Generic content areas
+            'main', 'article', '[role="main"]', '.content', '#content',
+            '.container', '.wrapper'
+        ]
+        
+        relevant_content = []
+        seen_text = set()
+        
+        # Extract content from prioritized selectors
+        for selector in event_selectors:
+            try:
+                elements = soup.select(selector)
+                for element in elements:
+                    text = element.get_text(strip=True)
+                    if text and len(text) > 10 and text not in seen_text:
+                        seen_text.add(text)
+                        relevant_content.append(text)
+                        # Limit total content
+                        if len(' '.join(relevant_content)) > 4000:
+                            break
+                if len(' '.join(relevant_content)) > 4000:
+                    break
+            except:
+                continue
+        
+        # If we didn't get much content, fall back to body text
+        if len(' '.join(relevant_content)) < 500:
+            body = soup.find('body')
+            if body:
+                body_text = body.get_text(strip=True)
+                # Clean up whitespace
+                body_text = re.sub(r'\s+', ' ', body_text)
+                relevant_content = [body_text[:4000]]
+        
+        extracted_content = ' '.join(relevant_content)
+        
+        # Final cleanup
+        extracted_content = re.sub(r'\s+', ' ', extracted_content)
+        extracted_content = extracted_content[:4000]  # Hard limit
+        
+        logger.info(f"Extracted {len(extracted_content)} characters from {len(html_content)} characters ({len(extracted_content)/len(html_content)*100:.1f}% reduction)")
+        
+        return extracted_content
+        
+    except Exception as e:
+        logger.error(f"Error extracting content: {e}")
+        # Fallback to simple truncation
+        soup = BeautifulSoup(html_content, 'html.parser')
+        text = soup.get_text()
+        text = re.sub(r'\s+', ' ', text)
+        return text[:4000]
 
 if __name__ == '__main__':
     main()
