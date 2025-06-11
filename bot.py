@@ -4,7 +4,9 @@ import logging
 import asyncio
 import signal
 import sys
+import threading
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from telegram import Update, Bot
@@ -340,6 +342,29 @@ async def cleanup_webhook_and_pending_updates():
     except Exception as e:
         logger.warning(f"Webhook cleanup failed (this might be normal): {e}")
 
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Simple health check endpoint for Render web service."""
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Suppress default HTTP logging
+        pass
+
+def start_health_server():
+    """Start a simple HTTP server for health checks."""
+    port = int(os.environ.get('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    logger.info(f"Starting health check server on port {port}")
+    server.serve_forever()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the /start command is issued."""
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Hello! I'm a bot to help you scrape events and add them to Airtable.")
@@ -417,6 +442,10 @@ def main():
     ]):
         logger.error("Missing one or more required environment variables.")
         return
+
+    # Start health check server in background thread for Render web service
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
 
     try:
         asyncio.run(start_bot_with_retry())
