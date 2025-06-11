@@ -5,7 +5,7 @@ from bot import scrape_event_data
 # Test URLs - using past events to ensure they don't change
 TEST_URLS = {
     'luma': 'https://lu.ma/futurefight',
-    'meetup': 'https://www.meetup.com/genius-networking-boulder/events/305189326/?eventOrigin=your_events',
+    'meetup': 'https://www.meetup.com/pickup-sports-adult-league/events/307990195/?recId=d8da0921-1b75-490e-8127-1ccacc519fd2&recSource=ml-popular-events-nearby-offline&searchId=f799a084-68e2-4e07-888c-345cc30ff28d&eventOrigin=home_page_upcoming_events%24all',
     'eventbrite': 'https://www.eventbrite.com/e/bierhalle-brawl-live-pro-wrestling-june-tickets-1354003373539?aff=ehometext'
 }
 
@@ -17,8 +17,8 @@ EXPECTED_RESULTS = {
     },
     'meetup': {
         'should_work': True,
-        'expected_title_contains': 'Genius Networking',  # We'll be flexible here
-        'expected_location_contains': 'Boulder'
+        'expected_title_contains': 'Pickup Sports',  # Current event that should work
+        'expected_location_contains': 'Cleveland'
     },
     'eventbrite': {
         'should_work': True,
