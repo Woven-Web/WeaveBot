@@ -306,8 +306,29 @@ async def get_html_with_playwright(url: str) -> str:
                     # Try to wait for specific content that indicates the page is ready
                     try:
                         if 'meetup.com' in url:
-                            # Wait for Meetup-specific elements
-                            await page.wait_for_selector('[data-testid], [class*="event"], h1, h2', timeout=5000)
+                            # Enhanced Meetup waiting strategy
+                            try:
+                                # First try waiting for event content specifically
+                                await page.wait_for_selector('h1, h2, [class*="font-"], [class*="text-"]', timeout=5000)
+                                
+                                # Check if we're on a login page (indicating private event or redirect)
+                                login_indicators = await page.evaluate('''() => {
+                                    const text = document.body.innerText.toLowerCase();
+                                    return text.includes('log in') && text.includes('password') && text.includes('email');
+                                }''')
+                                
+                                if login_indicators:
+                                    logger.warning("Meetup event appears to require login - trying alternative access")
+                                    # Try removing query parameters that might cause redirects
+                                    clean_url = url.split('?')[0]
+                                    if clean_url != url:
+                                        logger.info(f"Trying clean URL: {clean_url}")
+                                        await page.goto(clean_url, wait_until='domcontentloaded', timeout=10000)
+                                        await page.wait_for_selector('h1, h2, [class*="font-"]', timeout=5000)
+                                
+                            except Exception as e:
+                                logger.info(f"Meetup specific waiting failed: {e}")
+                                # Fallback to generic waiting
                         elif 'eventbrite.com' in url:
                             await page.wait_for_selector('[data-automation-id], [class*="event"], h1', timeout=5000)
                         elif 'facebook.com' in url:
@@ -515,6 +536,10 @@ async def scrape_event_data(url: str) -> dict:
         if 'facebook.com/events' in url:
             logger.info("Facebook event detected - applying special handling")
         
+        # Check for Meetup events and handle privacy issues
+        if 'meetup.com' in url and '/events/' in url:
+            logger.info("Meetup event detected - checking for privacy restrictions")
+        
         # Get the fully rendered HTML using Playwright
         html_content = await get_html_with_playwright(url)
         
@@ -522,9 +547,53 @@ async def scrape_event_data(url: str) -> dict:
             logger.error("Could not retrieve HTML from Playwright")
             return {}
         
-        # Check for login walls (especially Facebook)
-        login_indicators = ['log in', 'sign up', 'create account', 'join facebook', 'you must log in']
-        if any(indicator in html_content.lower() for indicator in login_indicators):
+        # Check for actual login walls (not just navigation links)
+        # More specific patterns that indicate actual login requirements
+        login_wall_patterns = [
+            'please log in to continue',
+            'you must log in to view', 
+            'you must log in to continue',
+            'sign in to continue',
+            'login required',
+            'requires authentication',
+            'please sign in to access',
+            'you need to log in',
+            'login to view this',
+            'sign in to view',
+            'unauthorized access',
+            'authentication required'
+        ]
+        
+        # Also check for Facebook-specific login patterns
+        facebook_login_patterns = [
+            'log in or sign up to view',
+            'you must log in first',
+            'join facebook',
+            'create new account',
+            'noticeYou must log in'
+        ]
+        
+        lower_content = html_content.lower()
+        
+        # Check for actual login walls
+        login_wall_detected = any(pattern in lower_content for pattern in login_wall_patterns)
+        facebook_login_detected = 'facebook.com' in url and any(pattern in lower_content for pattern in facebook_login_patterns)
+        
+        # Special handling for Meetup login redirects (common with private events)
+        if 'meetup.com' in url and any(pattern in lower_content for pattern in ['log in', 'sign up', 'email', 'password']):
+            # Check if this looks like a Meetup login page instead of the actual event
+            if all(pattern in lower_content for pattern in ['log in', 'password', 'email']) and 'event' not in lower_content.replace('eventorigin', ''):
+                return {
+                    "error": "🔒 Meetup Event Requires Login or is Private\n\n" +
+                            "This Meetup event appears to be private or requires member login. Try these alternatives:\n\n" +
+                            "👥 **Join the Group**: Join the Meetup group first, then view the event\n" +
+                            "🔗 **Remove URL Parameters**: Try accessing the event without ?eventOrigin=your_events\n" +
+                            "📧 **Contact Organizer**: Ask the organizer to make the event public\n" +
+                            "📝 **Manual Entry**: Copy event details manually from your Meetup dashboard\n\n" +
+                            "Many Meetup events are group-member-only or have privacy settings that block external access."
+                }
+        
+        if login_wall_detected or facebook_login_detected:
             if 'facebook.com' in url:
                 return {
                     "error": "🔒 Facebook Event Requires Login\n\n" +
@@ -990,9 +1059,27 @@ def extract_relevant_content(html_content: str, url: str) -> str:
             '[data-testid*="event"]', '[data-testid*="date"]', '[data-testid*="location"]',
             '[data-cy*="event"]', '[data-cy*="date"]', '[data-cy*="location"]',
             
-            # Meetup.com specific
+            # Meetup.com specific (enhanced selectors for current Meetup structure)
             '[class*="eventTitle"]', '[class*="eventDescription"]', '[class*="eventDetails"]',
             '[class*="eventTimeDisplay"]', '[class*="venueDisplay"]',
+            # Modern Meetup selectors (2024+)
+            '[data-event-label]', '[data-testid*="event"]', '[data-testid*="title"]',
+            '[data-testid*="description"]', '[data-testid*="date"]', '[data-testid*="time"]',
+            '[data-testid*="location"]', '[data-testid*="venue"]',
+            # Meetup CSS class patterns
+            '[class*="text-"] h1', '[class*="text-"] h2', '[class*="text-"] h3',
+            '[class*="mb-"] h1', '[class*="mb-"] h2', '[class*="mb-"] h3',
+            '[class*="font-"] h1', '[class*="font-"] h2', '[class*="font-"] h3',
+            # Meetup content containers
+            '[class*="event-"] div', '[class*="event-"] p', '[class*="event-"] span',
+            'div[class*="break-words"]', 'p[class*="break-words"]',
+            'div[class*="space-y"]', 'div[class*="grid"]',
+            # Tailwind CSS classes commonly used by Meetup
+            'div[class*="flex"]', 'div[class*="block"]', 'div[class*="text-gray"]',
+            'span[class*="font-medium"]', 'span[class*="font-semibold"]',
+            # Meetup specific content
+            'time[datetime]', '[class*="time-display"]', '[class*="date-display"]',
+            '[class*="venue-info"]', '[class*="location-info"]', '[class*="address"]',
             
             # Eventbrite specific  
             '[class*="event-title"]', '[class*="event-description"]', '[class*="event-details"]',
