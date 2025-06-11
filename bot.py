@@ -67,7 +67,16 @@ async def handle_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             event_data = await scrape_event_data(url)
-            if event_data:
+            
+            # Check if event_data contains an error
+            if event_data and "error" in event_data:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=event_data["error"],
+                    parse_mode=ParseMode.MARKDOWN,
+                    disable_web_page_preview=True
+                )
+            elif event_data:
                 airtable_record = await asyncio.to_thread(save_event_to_airtable, event_data, url)
                 if airtable_record:
                     record_id = airtable_record['id']
@@ -182,9 +191,13 @@ async def handle_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 async def get_html_with_playwright(url: str) -> str:
-    """Use Playwright to fetch the fully rendered HTML of a page."""
+    """Use Playwright to fetch HTML with multiple fallback strategies for problematic sites."""
     logger.info(f"Fetching page with Playwright: {url}")
     html_content = ""
+    
+    # Detect problematic domains that need special handling
+    problematic_domains = ['meetup.com', 'eventbrite.com', 'facebook.com']
+    is_problematic = any(domain in url.lower() for domain in problematic_domains)
     
     try:
         async with async_playwright() as p:
@@ -200,29 +213,160 @@ async def get_html_with_playwright(url: str) -> str:
                     '--disable-gpu',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-blink-features=AutomationControlled'  # Hide automation
                 ]
             )
             
+            # Enhanced context for bot detection evasion
             context = await browser.new_context(
-                user_agent='Mozilla/5.0 (compatible; WeaveBot/1.0; +https://github.com/Woven-Web/WeaveBot)'
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                viewport={'width': 1280, 'height': 720},
+                extra_http_headers={
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                }
             )
             
             page = await context.new_page()
             
-            # Set a reasonable timeout and wait for network to be idle
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            # Add JavaScript to hide automation indicators
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+                
+                // Additional Facebook-specific evasion
+                if (window.location.hostname.includes('facebook.com')) {
+                    // Override automation detection
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                    
+                    // Mimic real browser behavior
+                    Object.defineProperty(navigator, 'platform', {
+                        get: () => 'MacIntel',
+                    });
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {
+                        get: () => 8,
+                    });
+                }
+            """)
             
-            # Wait a bit more for any lazy-loaded content
-            await page.wait_for_timeout(2000)
+            # Facebook-specific handling: try mobile version first
+            if 'facebook.com' in url:
+                # Try mobile Facebook first (often less restrictive)
+                mobile_url = url.replace('www.facebook.com', 'm.facebook.com')
+                if mobile_url != url:
+                    logger.info(f"Trying mobile Facebook version: {mobile_url}")
+                    try:
+                        await page.goto(mobile_url, wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(3000)
+                        content = await page.content()
+                        if not any(phrase in content.lower() for phrase in ['log in', 'sign up', 'create account']):
+                            logger.info("Mobile Facebook version accessible, using this content")
+                            html_content = content
+                        else:
+                            logger.info("Mobile version also requires login, trying desktop")
+                            url = url  # Keep original URL for desktop attempt
+                    except Exception as e:
+                        logger.warning(f"Mobile Facebook attempt failed: {e}")
             
-            html_content = await page.content()
+            # Strategy 1: Try normal loading first (for most sites)
+            if not is_problematic:
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=15000)
+                    await page.wait_for_timeout(2000)
+                    html_content = await page.content()
+                    logger.info(f"Strategy 1 (normal) successful: {len(html_content)} characters")
+                except Exception as e:
+                    logger.warning(f"Strategy 1 failed: {e}")
+                    html_content = ""
+            
+            # Strategy 2: Domcontentloaded + timed wait (for problematic sites or if Strategy 1 failed)
+            if not html_content or len(html_content) < 1000:
+                try:
+                    logger.info("Trying Strategy 2: domcontentloaded + wait")
+                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    
+                    # Wait for critical content to load
+                    await page.wait_for_timeout(5000)
+                    
+                    # Try to wait for specific content that indicates the page is ready
+                    try:
+                        if 'meetup.com' in url:
+                            # Wait for Meetup-specific elements
+                            await page.wait_for_selector('[data-testid], [class*="event"], h1, h2', timeout=5000)
+                        elif 'eventbrite.com' in url:
+                            await page.wait_for_selector('[data-automation-id], [class*="event"], h1', timeout=5000)
+                        elif 'facebook.com' in url:
+                            # Facebook-specific waiting strategy
+                            try:
+                                # Try to wait for common Facebook content structures
+                                await page.wait_for_selector('[role="main"], [data-testid], div[id*="mount"], h1, h2', timeout=8000)
+                                # Additional wait for dynamic content
+                                await page.wait_for_timeout(3000)
+                                logger.info("Facebook page structure detected and loaded")
+                            except:
+                                # Facebook often loads content dynamically, so just wait a bit more
+                                await page.wait_for_timeout(5000)
+                                logger.info("Facebook fallback wait completed")
+                        else:
+                            await page.wait_for_selector('h1, h2, [class*="event"], main, article', timeout=5000)
+                    except:
+                        logger.info("Specific selectors not found, using page content as-is")
+                    
+                    html_content = await page.content()
+                    logger.info(f"Strategy 2 (domcontentloaded) successful: {len(html_content)} characters")
+                except Exception as e:
+                    logger.warning(f"Strategy 2 failed: {e}")
+                    html_content = ""
+            
+            # Strategy 3: Load + immediate capture (last resort)
+            if not html_content or len(html_content) < 1000:
+                try:
+                    logger.info("Trying Strategy 3: load + immediate capture")
+                    await page.goto(url, wait_until="load", timeout=25000)
+                    await page.wait_for_timeout(3000)  # Brief wait for dynamic content
+                    html_content = await page.content()
+                    logger.info(f"Strategy 3 (load only) successful: {len(html_content)} characters")
+                except Exception as e:
+                    logger.warning(f"Strategy 3 failed: {e}")
+                    html_content = ""
+            
+            # Strategy 4: Just navigate and grab whatever we can (emergency fallback)
+            if not html_content or len(html_content) < 1000:
+                try:
+                    logger.info("Trying Strategy 4: emergency navigation")
+                    response = await page.goto(url, timeout=30000)
+                    if response and response.status == 200:
+                        await page.wait_for_timeout(2000)
+                        html_content = await page.content()
+                        logger.info(f"Strategy 4 (emergency) successful: {len(html_content)} characters")
+                except Exception as e:
+                    logger.error(f"All strategies failed: {e}")
+                    html_content = ""
+            
             await browser.close()
             
-            logger.info(f"Successfully fetched rendered HTML ({len(html_content)} characters)")
-            
+            if html_content and len(html_content) > 1000:
+                logger.info(f"Successfully fetched rendered HTML ({len(html_content)} characters)")
+            else:
+                logger.error("Failed to fetch meaningful HTML content")
+                
     except Exception as e:
-        logger.error(f"Playwright failed to fetch HTML: {e}")
+        logger.error(f"Playwright failed completely: {e}")
         raise
         
     return html_content
@@ -367,6 +511,10 @@ async def extract_update_data_with_openai(html_content: str, url: str) -> dict:
 async def scrape_event_data(url: str) -> dict:
     """Scrape event data from a given URL using Playwright + OpenAI."""
     try:
+        # Check for Facebook events and provide helpful guidance
+        if 'facebook.com/events' in url:
+            logger.info("Facebook event detected - applying special handling")
+        
         # Get the fully rendered HTML using Playwright
         html_content = await get_html_with_playwright(url)
         
@@ -374,14 +522,58 @@ async def scrape_event_data(url: str) -> dict:
             logger.error("Could not retrieve HTML from Playwright")
             return {}
         
+        # Check for login walls (especially Facebook)
+        login_indicators = ['log in', 'sign up', 'create account', 'join facebook', 'you must log in']
+        if any(indicator in html_content.lower() for indicator in login_indicators):
+            if 'facebook.com' in url:
+                return {
+                    "error": "🔒 Facebook Event Requires Login\n\n" +
+                            "Facebook events often require login to view details. Try these alternatives:\n\n" +
+                            "📱 **Mobile Share Link**: Share the event from Facebook mobile app\n" +
+                            "🔗 **Public Event Page**: Some events have public pages viewable without login\n" +
+                            "📝 **Manual Entry**: Copy the event details manually\n" +
+                            "🎯 **Alternative Platforms**: Check if the event is also posted on Eventbrite, Meetup, or Lu.ma\n\n" +
+                            "Unfortunately, Facebook's privacy settings often block automated access to event information."
+                }
+            else:
+                return {"error": f"This page requires login to view content. Please check if there's a public version of the event."}
+        
         # Extract structured data using OpenAI
         event_data = await extract_event_data_with_openai(html_content, url)
+        
+        if not event_data:
+            return {"error": "Failed to extract event data"}
+        
+        # Check if extraction failed (all None values)
+        if all(value is None for value in event_data.values()):
+            if 'facebook.com' in url:
+                return {
+                    "error": "🚫 Facebook Event Extraction Failed\n\n" +
+                            "The page loaded but contained no extractable event information. This often happens with:\n\n" +
+                            "🔒 **Private Events**: Event is only visible to invited users\n" +
+                            "👥 **Group Events**: Event requires group membership\n" +
+                            "🌐 **Region Restrictions**: Event may be geo-blocked\n" +
+                            "🤖 **Bot Detection**: Facebook detected automated access\n\n" +
+                            "**Workarounds:**\n" +
+                            "• Try sharing the event from mobile app\n" +
+                            "• Check if organizer posted on other platforms\n" +
+                            "• Copy event details manually"
+                }
+            else:
+                return {"error": "Could not extract event information from this page. The content may be dynamically loaded or require special access."}
         
         return event_data
 
     except Exception as e:
         logger.error(f"Error during event scraping: {e}")
-        return {}
+        if 'facebook.com' in url:
+            return {
+                "error": "❌ Facebook Event Error\n\n" +
+                        f"Technical error occurred: {str(e)}\n\n" +
+                        "Facebook events are challenging to process automatically due to privacy restrictions and bot detection. " +
+                        "Consider using Eventbrite, Meetup.com, or Lu.ma for better compatibility."
+            }
+        return {"error": f"Failed to process event: {str(e)}"}
 
 async def scrape_update_data(url: str) -> dict:
     """Scrape update/article data from a given URL using Playwright + OpenAI."""
@@ -735,6 +927,44 @@ def extract_relevant_content(html_content: str, url: str) -> str:
             ):
                 meta_content.append(f"{name or property_attr}: {content}")
         
+        # Special handling for Facebook Events
+        is_facebook = 'facebook.com' in url.lower()
+        if is_facebook:
+            logger.info("Detected Facebook URL, using specialized extraction")
+            
+            # Facebook often requires different approaches
+            # 1. Look for specific Facebook meta properties
+            fb_meta = []
+            for meta in meta_tags:
+                property_attr = meta.get('property', '').lower()
+                content = meta.get('content', '')
+                if property_attr.startswith(('og:', 'fb:', 'article:')) and content:
+                    fb_meta.append(f"{property_attr}: {content}")
+            
+            if fb_meta:
+                meta_content.extend(fb_meta)
+                logger.info(f"Found {len(fb_meta)} Facebook-specific meta tags")
+            
+            # 2. Look for Facebook-specific structured data
+            for script in soup.find_all('script'):
+                if script.string and 'ScheduledEvent' in script.string:
+                    try:
+                        # Extract Facebook event data
+                        script_content = script.string
+                        if '"@type":"ScheduledEvent"' in script_content:
+                            structured_data.append(f"FACEBOOK_EVENT_DATA: {script_content[:2000]}")
+                            logger.info("Found Facebook ScheduledEvent structured data")
+                    except:
+                        pass
+            
+            # 3. Check for login wall or access restrictions
+            if any(phrase in soup.get_text().lower() for phrase in ['log in', 'sign up', 'create account', 'join facebook']):
+                logger.warning("Facebook page may require login - content extraction may be limited")
+                # Add whatever content we can find
+                body_text = soup.get_text()
+                if 'event' in body_text.lower() and len(body_text.strip()) > 100:
+                    structured_data.append(f"FACEBOOK_BODY_CONTENT: {body_text[:3000]}")
+        
         # Remove unnecessary elements
         for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
             tag.decompose()
@@ -772,8 +1002,15 @@ def extract_relevant_content(html_content: str, url: str) -> str:
             '[class*="event-name"]', '[class*="event-info"]', '[class*="event-description"]',
             '[class*="event-when"]', '[class*="event-where"]', '[class*="event-details"]',
             
-            # Facebook Events
+            # Enhanced Facebook Events selectors
             '[data-testid*="event"]', '[role="article"]',
+            '[data-testid*="header"]', '[data-testid*="title"]', '[data-testid*="description"]',
+            '[data-testid*="time"]', '[data-testid*="date"]', '[data-testid*="location"]',
+            '[class*="fb"]', '[id*="fb"]',  # Generic Facebook classes
+            '[aria-label*="event"]', '[aria-label*="Event"]',
+            'div[role="main"]', 'div[role="complementary"]',  # Facebook content areas
+            '[class*="x1"]', '[class*="x2"]',  # Facebook often uses generated class names
+            'span[dir="auto"]',  # Facebook text spans
             
             # Time and date specific
             'time', '[datetime]', '[class*="calendar"]', '[id*="calendar"]',
@@ -782,6 +1019,20 @@ def extract_relevant_content(html_content: str, url: str) -> str:
             'main', 'article', '[role="main"]', '.content', '#content',
             '.container', '.wrapper', '.page-content'
         ]
+        
+        # Add Facebook-specific fallback selectors if needed
+        if is_facebook:
+            facebook_fallback_selectors = [
+                'div[data-pagelet]',  # Facebook pagelets
+                'div[data-gt]',  # Facebook graph tokens
+                'div[class*="userContent"]',  # User content areas
+                'span[class*="fwb"]',  # Facebook bold text (often titles)
+                'div[class*="_4-u2"]',  # Facebook post containers
+                'div[class*="mtm"]',  # Facebook margin classes often used for content
+                '*[id*="event"]',  # Any element with event in ID
+                '*[class*="Event"]',  # Any element with Event in class
+            ]
+            event_selectors.extend(facebook_fallback_selectors)
         
         relevant_content = []
         seen_text = set()
@@ -793,7 +1044,7 @@ def extract_relevant_content(html_content: str, url: str) -> str:
         
         # Add meta tag content
         if meta_content:
-            relevant_content.append("META TAGS: " + " | ".join(meta_content[:10]))  # Limit meta tags
+            relevant_content.append("META TAGS: " + " | ".join(meta_content[:15]))  # More meta tags for Facebook
         
         # Extract content from prioritized selectors
         for selector in event_selectors:
@@ -812,6 +1063,30 @@ def extract_relevant_content(html_content: str, url: str) -> str:
                     break
             except:
                 continue
+        
+        # Facebook-specific fallback: if we still don't have much content, be more aggressive
+        if is_facebook and len(' '.join(relevant_content)) < 800:
+            logger.info("Facebook content extraction yielded little content, trying aggressive fallback")
+            
+            # Get all text content and look for event-related keywords
+            all_text = soup.get_text()
+            if any(keyword in all_text.lower() for keyword in ['event', 'when', 'where', 'date', 'time', 'location']):
+                # Split into chunks and take relevant ones
+                sentences = [s.strip() for s in all_text.split('.') if s.strip()]
+                event_sentences = []
+                
+                for sentence in sentences:
+                    if any(keyword in sentence.lower() for keyword in [
+                        'event', 'when', 'where', 'date', 'time', 'location', 'venue', 
+                        'starts', 'begins', 'ends', 'join', 'attend', 'going'
+                    ]):
+                        event_sentences.append(sentence)
+                        if len(' '.join(event_sentences)) > 2000:
+                            break
+                
+                if event_sentences:
+                    relevant_content.append("FACEBOOK_FALLBACK_CONTENT: " + ' '.join(event_sentences))
+                    logger.info(f"Facebook fallback found {len(event_sentences)} relevant sentences")
         
         # If we didn't get much content, fall back to body text
         if len(' '.join(relevant_content)) < 500:
@@ -838,6 +1113,17 @@ def extract_relevant_content(html_content: str, url: str) -> str:
             logger.info(f"Found structured data - using extended {len(extracted_content)} char limit")
         if meta_content:
             logger.info(f"Extracted {len(meta_content)} relevant meta tags")
+        
+        # Additional diagnostic logging for Facebook
+        if is_facebook:
+            logger.info(f"Facebook extraction summary:")
+            logger.info(f"- Meta tags found: {len([m for m in meta_content if any(x in m for x in ['og:', 'fb:', 'event'])])}")
+            logger.info(f"- Structured data found: {len([s for s in structured_data if 'FACEBOOK' in s])}")
+            logger.info(f"- Final content length: {len(extracted_content)}")
+            
+            # Log a sample of what we extracted for debugging
+            if extracted_content:
+                logger.info(f"Facebook content sample (first 200 chars): {extracted_content[:200]}...")
         
         return extracted_content
         
