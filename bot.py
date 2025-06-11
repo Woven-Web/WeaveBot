@@ -398,22 +398,13 @@ async def start_bot_with_retry():
             message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
             application.add_handler(message_handler)
 
-            # Set up graceful shutdown
-            def signal_handler(sig, frame):
-                logger.info(f"Received signal {sig}. Shutting down gracefully...")
-                application.stop()
-                sys.exit(0)
-
-            signal.signal(signal.SIGINT, signal_handler)
-            signal.signal(signal.SIGTERM, signal_handler)
-
             logger.info("Bot started and listening for messages...")
             
-            # Start polling with retry on conflicts
+            # Start polling with retry on conflicts - use close_loop=True to properly close
             await application.run_polling(
                 drop_pending_updates=True,
-                close_loop=False,
-                stop_signals=None  # We handle signals ourselves
+                close_loop=True,
+                stop_signals=[signal.SIGINT, signal.SIGTERM]
             )
             
             break  # If we get here, polling started successfully
