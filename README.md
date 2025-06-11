@@ -159,15 +159,54 @@ This version **removes ScrapeGraphAI** in favor of a cleaner architecture:
 - Better error handling and logging
 - Faster processing times
 
+## 🧪 Testing
+
+WeaveBot includes a comprehensive test suite with 22 tests covering all functionality:
+
+### Quick Testing
+```bash
+# Run all tests
+python3 run_tests.py all
+
+# Run only unit tests (fast)
+python3 run_tests.py unit
+
+# Run with coverage report
+python3 run_tests.py coverage
+```
+
+### Test Coverage
+- ✅ Date validation and formatting
+- ✅ OpenAI data extraction with mocking
+- ✅ Playwright browser automation
+- ✅ Airtable integration and data mapping
+- ✅ Newsletter generation and formatting
+- ✅ End-to-end workflow testing
+- ✅ Comprehensive error handling
+
+### CI/CD
+- **GitHub Actions**: Automated testing on push/PR
+- **Multiple Python versions**: 3.9, 3.10, 3.11
+- **Code quality**: Linting with flake8, black, isort
+- **Coverage reporting**: Integrated with Codecov
+
+See [Testing Guide](docs/testing.md) for detailed documentation.
+
 ## 🛠️ Development
 
 ### Project Structure
 ```
 WeaveBot/
 ├── bot.py              # Main bot logic
+├── test_bot.py         # Comprehensive test suite
+├── run_tests.py        # Test runner script
+├── pytest.ini         # Test configuration
 ├── requirements.txt    # Python dependencies
 ├── Dockerfile         # Container configuration
 ├── render.yaml        # Render deployment config
+├── docs/              # Documentation
+│   ├── testing.md     # Testing guide
+│   └── python-revert-analysis.md
 └── README.md          # This file
 ```
 
