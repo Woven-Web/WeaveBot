@@ -27,7 +27,12 @@ export class MarkdownerService {
         },
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'WeaveBot/1.0.0',
+          'User-Agent': 'Mozilla/5.0 (compatible; WeaveBot/1.0.0; +https://github.com/Woven-Web/WeaveBot)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
         },
         timeout: this.timeout,
       });
@@ -89,7 +94,8 @@ export class MarkdownerService {
         }
         
         if (error.response?.status === 403) {
-          throw new ScrapingError('Access forbidden (403) - website blocked the request', url);
+          const domain = new URL(url).hostname;
+          throw new ScrapingError(`${domain} blocked our request. Some sites (like Eventbrite) have anti-bot protection. Please try copying the event details manually or use a different event platform.`, url);
         }
         
         if (error.response && error.response.status >= 500) {

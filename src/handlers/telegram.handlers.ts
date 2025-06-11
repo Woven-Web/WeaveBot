@@ -119,7 +119,17 @@ Event details have been saved to the database.`;
         url 
       });
     } else {
-      await ctx.reply(`❌ Failed to process event: ${result.error}`);
+      // Provide more helpful error messages for common issues
+      let errorMessage = result.error || 'Unknown error occurred';
+      
+      if (errorMessage.includes('blocked our request') || errorMessage.includes('anti-bot protection')) {
+        errorMessage += '\n\n💡 *Tip:* Try using a different event platform like Lu.ma, Meetup, or Facebook Events which are more bot-friendly.';
+      }
+      
+      await ctx.reply(`❌ Failed to process event: ${errorMessage}`, { 
+        parse_mode: 'Markdown',
+        link_preview_options: { is_disabled: true }
+      });
       logger.warn('Event processing failed', { 
         userId: ctx.from?.id, 
         url, 
@@ -171,7 +181,17 @@ Update details have been saved to the database.`;
         url 
       });
     } else {
-      await ctx.reply(`❌ Failed to process update: ${result.error}`);
+      // Provide more helpful error messages for common issues  
+      let errorMessage = result.error || 'Unknown error occurred';
+      
+      if (errorMessage.includes('blocked our request') || errorMessage.includes('anti-bot protection')) {
+        errorMessage += '\n\n💡 *Tip:* Some websites block automated access. Try using news sites, blogs, or official announcements which are typically more accessible.';
+      }
+      
+      await ctx.reply(`❌ Failed to process update: ${errorMessage}`, { 
+        parse_mode: 'Markdown',
+        link_preview_options: { is_disabled: true }
+      });
       logger.warn('Update processing failed', { 
         userId: ctx.from?.id, 
         url, 
