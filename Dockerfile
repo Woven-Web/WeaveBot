@@ -1,44 +1,12 @@
-# Use Python 3.11 slim image as base
-FROM python:3.11-slim
+# Use official Playwright image with browsers pre-installed
+FROM mcr.microsoft.com/playwright/python:v1.52.0-focal
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for Playwright and other packages
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libgtk-4-1 \
-    libnspr4 \
-    libnss3 \
-    libwayland-client0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xvfb \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers and dependencies
-RUN playwright install-deps chromium
-RUN playwright install chromium
-RUN playwright install chromium-headless-shell
 
 # Copy the bot code
 COPY bot.py .
@@ -46,7 +14,6 @@ COPY bot.py .
 # Set environment variables for production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Run the bot
 CMD ["python", "bot.py"] 
