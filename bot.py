@@ -40,6 +40,9 @@ AIRTABLE_UPDATES_TABLE_ID = os.getenv("AIRTABLE_UPDATES_TABLE_ID")
 AIRTABLE_UPDATES_VIEW_ID = os.getenv("AIRTABLE_UPDATES_VIEW_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Security: Authorized users who can add bot to groups (comma-separated list of Telegram user IDs)
+AUTHORIZED_ADMINS = os.getenv("AUTHORIZED_ADMINS", "").split(",") if os.getenv("AUTHORIZED_ADMINS") else []
+
 # Initialize OpenAI client
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -48,6 +51,13 @@ URL_PATTERN = r'https?://[^\s]+'
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages for events or updates."""
+    # Block private messages from unauthorized users
+    if update.effective_chat.type == 'private':
+        user_id = str(update.effective_user.id)
+        if user_id not in AUTHORIZED_ADMINS:
+            logger.info(f"Blocking private message from unauthorized user: {user_id}")
+            return
+    
     message_text = update.message.text
     
     if message_text.lower().startswith('event:'):
@@ -859,6 +869,18 @@ async def cleanup_webhook_and_pending_updates():
     except Exception as e:
         logger.warning(f"Webhook cleanup failed (this might be normal): {e}")
 
+async def handle_group_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send welcome message when bot is added to a group."""
+    if update.message.new_chat_members:
+        # Check if our bot was added
+        bot_user = await context.bot.get_me()
+        if any(member.id == bot_user.id for member in update.message.new_chat_members):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="👋 **WeaveBot Added Successfully!**\n\nI can help extract event information from URLs. Anyone in this group can use me!\n\n**Usage:**\n• Send `event: <URL>` to extract event data\n• Send `update: <URL>` to save community updates\n• Use `/weekly_weave` for newsletter generation\n\nLet's get started! 🚀",
+                parse_mode='Markdown'
+            )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the /start command is issued."""
     welcome_message = """🌟 *WeaveBot* 🌟
@@ -902,9 +924,13 @@ async def start_bot():
     start_handler = CommandHandler('start', start)
     application.add_handler(start_handler)
 
-    weave_handler = CommandHandler('weeklyweave', weekly_weave)
+        weave_handler = CommandHandler('weeklyweave', weekly_weave)
     application.add_handler(weave_handler)
-
+    
+    # Handler for when bot is added to groups
+    group_join_handler = MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_group_join)
+    application.add_handler(group_join_handler)
+    
     message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     application.add_handler(message_handler)
 
