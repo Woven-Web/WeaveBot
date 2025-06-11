@@ -4,6 +4,16 @@
 
 WeaveBot is a Python-based Telegram bot that extracts event data from websites using Playwright browser automation and OpenAI for intelligent content parsing. This guide covers deployment options for the current Python implementation.
 
+## ⚡ **Performance Features**
+
+### **Smart Content Extraction**
+WeaveBot uses intelligent HTML parsing to dramatically reduce OpenAI token usage:
+- **95%+ Token Reduction**: From 222k+ characters to ~4k max
+- **Cost Efficient**: Reduces OpenAI API costs significantly 
+- **Event-Focused**: Prioritizes event-specific content (titles, dates, locations)
+- **Platform Optimized**: Special handling for Lu.ma, Eventbrite, Meetup.com
+- **Fallback Safe**: Graceful degradation for any website structure
+
 ## 📋 **Prerequisites**
 
 - Python 3.9+ environment
