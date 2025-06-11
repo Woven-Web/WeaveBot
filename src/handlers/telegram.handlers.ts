@@ -25,7 +25,13 @@ Welcome to WeaveBot - your intelligent event assistant!
 • \`event: [URL]\` - Extract event details from a webpage
 • \`update: [URL]\` - Process update information from a webpage
 
-Simply send me a message in one of these formats and I'll extract the relevant information for you!
+*Best supported sites:*
+• 📰 News sites & blogs
+• 📋 Simple event pages 
+• 🎯 Meetup.com events
+• 📄 Static websites
+
+*Note:* Some sites like Eventbrite or Lu.ma use dynamic content that may not work perfectly. For best results, try direct links to event details!
 
 Built with TypeScript, powered by OpenAI GPT-4o 🚀`;
 
@@ -123,7 +129,9 @@ Event details have been saved to the database.`;
       let errorMessage = result.error || 'Unknown error occurred';
       
       if (errorMessage.includes('blocked our request') || errorMessage.includes('anti-bot protection')) {
-        errorMessage += '\n\n💡 *Tip:* Try using a different event platform like Lu.ma, Meetup, or Facebook Events which are more bot-friendly.';
+        errorMessage += '\n\n💡 *Tip:* Try using Meetup.com or simpler event pages which are more bot-friendly.';
+      } else if (errorMessage.includes('dynamic content')) {
+        errorMessage += '\n\n💡 *Tip:* This site uses JavaScript that our scraper can\'t handle. Try finding a direct link to the event details page, or copy the information manually.';
       }
       
       await ctx.reply(`❌ Failed to process event: ${errorMessage}`, { 

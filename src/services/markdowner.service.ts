@@ -63,6 +63,12 @@ export class MarkdownerService {
         throw new ScrapingError('Received empty content from Markdowner API', url);
       }
 
+      // Check for "no content found" response from Markdowner
+      if (markdownContent.trim() === '## No content found.') {
+        const domain = new URL(url).hostname;
+        throw new ScrapingError(`${domain} uses dynamic content that couldn't be scraped. Try using a direct link to the event details, or copy the information manually.`, url);
+      }
+
       const result: MarkdownerResponse = {
         success: true,
         data: markdownContent,

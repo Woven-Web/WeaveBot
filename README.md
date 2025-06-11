@@ -1,244 +1,238 @@
-# WeaveBot TypeScript 🚀
+# WeaveBot - Intelligent Event Assistant 🤖
 
-A modern TypeScript rewrite of WeaveBot - an intelligent Telegram bot for event extraction and data management.
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
+[![Playwright](https://img.shields.io/badge/playwright-1.43+-green.svg)](https://playwright.dev)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-orange.svg)](https://openai.com)
 
-## Overview
+An intelligent Telegram bot that extracts event information from web pages using **Playwright** for browser automation and **OpenAI GPT-4o** for intelligent data extraction.
 
-WeaveBot processes event information from web pages and stores them in Airtable. This TypeScript version offers significant improvements over the original Python implementation:
+## 🚀 Key Features
 
-- **⚡ 3x faster processing** - Under 10 seconds vs 30+ seconds
-- **🏗️ Zero browser dependencies** - Uses hosted Markdowner API instead of Playwright  
-- **🔒 Full type safety** - Comprehensive TypeScript with Zod validation
-- **📊 Structured logging** - Winston-based logging with production optimizations
-- **🐳 Simple deployment** - Standard Node.js container, no complex browser setup
+- **🌐 Universal Web Scraping**: Handles JavaScript-heavy sites (Lu.ma, Meetup, etc.) with Playwright
+- **🧠 AI-Powered Extraction**: Uses GPT-4o for intelligent event/update data extraction
+- **📊 Airtable Integration**: Automatically saves events and updates to organized tables
+- **⚡ Fast Processing**: ~5-10 second response times
+- **🛡️ Robust Error Handling**: Graceful failures with helpful user feedback
+- **📈 Weekly Summaries**: Generate newsletter-style event and update summaries
 
-## Features
-
-### Commands
-- `/start` - Welcome message and bot introduction
-- `/weeklyweave` - Generate weekly summary of recent events and updates
-
-### Message Handlers
-- `event: <URL>` - Extract event data from webpage and save to Airtable
-- `update: <URL>` - Save webpage content as an update to Airtable
-
-## Architecture
+## 🏗️ Architecture
 
 ```
-src/
-├── types/           # TypeScript types and Zod schemas
-├── utils/           # Configuration and logging utilities  
-├── services/        # Core business logic services
-├── handlers/        # Telegram bot message handlers
-└── test/           # Test files
+User Input (URL) → Playwright (Render Page) → OpenAI (Extract Data) → Airtable (Save) → User Feedback
 ```
 
-### Core Services
+### Why This Approach?
 
-- **MarkdownerService** - Converts web pages to clean markdown using hosted API
-- **OpenAIService** - Extracts structured event data using GPT-4
-- **AirtableService** - Manages event and update storage
-- **Event/Update Processors** - Orchestrate the full processing workflows
+- **Playwright**: Handles modern JavaScript-heavy event platforms
+- **OpenAI GPT-4o**: Intelligent, context-aware data extraction
+- **Direct Integration**: No third-party scraping services, full control
+- **Cost Effective**: Only OpenAI API costs (~$20-50/month typical usage)
 
-## Installation
+## 📋 Commands
 
-### Prerequisites
-- Node.js 20+
-- npm or yarn
-- Environment variables (see Configuration)
+- `/start` - Welcome message and usage guide
+- `/weeklyweave` - Generate weekly summary of events and updates
 
-### Setup
+## 💬 Message Formats
 
+### Event Extraction
+```
+event: https://lu.ma/event-link
+event: https://meetup.com/group/events/123456
+event: https://eventbrite.com/e/event-name-123456
+```
+
+### Update Processing
+```
+update: https://techcrunch.com/article-link
+update: Just wanted to share that our meetup went great!
+```
+
+## 🌐 Supported Websites
+
+### ✅ **Excellent Support**
+- **Lu.ma events** - Full dynamic content support
+- **Meetup.com** - Comprehensive event details
+- **News sites** - TechCrunch, Wired, etc.
+- **Simple event pages** - Static HTML sites
+- **Blog posts** - Personal and corporate blogs
+
+### ⚠️ **Limited Support**
+- **Eventbrite** - May be blocked due to anti-bot measures
+- **Facebook Events** - Requires authentication
+- **LinkedIn Events** - Anti-scraping protection
+
+## 🔧 Environment Variables
+
+### Required
 ```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Start the bot
-npm start
-```
-
-### Development
-
-```bash
-# Run in development mode with hot reload
-npm run dev
-
-# Run tests
-npm test
-
-# Lint and format
-npm run lint
-npm run format
-```
-
-## Configuration
-
-Create a `.env` file with the following variables:
-
-```env
-# Telegram Configuration
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# OpenAI Configuration  
-OPENAI_API_KEY=your_openai_key
-
-# Airtable Configuration
-AIRTABLE_API_KEY=your_airtable_key
-AIRTABLE_BASE_ID=your_base_id
-AIRTABLE_TABLE_ID=your_table_id
-AIRTABLE_VIEW_ID=your_view_id
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+OPENAI_API_KEY=your_openai_api_key
+AIRTABLE_API_KEY=your_airtable_api_key
+AIRTABLE_BASE_ID=your_airtable_base_id
 AIRTABLE_TABLE_NAME=Events
-AIRTABLE_UPDATES_TABLE_NAME=Updates
-AIRTABLE_UPDATES_TABLE_ID=your_updates_table_id
-AIRTABLE_UPDATES_VIEW_ID=your_updates_view_id
-
-# Optional Configuration
-NODE_ENV=production
-LOG_LEVEL=info
 ```
 
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | ✅ |
-| `TELEGRAM_CHAT_ID` | Default chat ID for messages | ✅ |
-| `OPENAI_API_KEY` | OpenAI API key for GPT-4 | ✅ |
-| `AIRTABLE_API_KEY` | Airtable API key | ✅ |
-| `AIRTABLE_BASE_ID` | Airtable base ID | ✅ |
-| `AIRTABLE_TABLE_ID` | Events table ID | ✅ |
-| `AIRTABLE_VIEW_ID` | Events view ID | ✅ |
-| `AIRTABLE_TABLE_NAME` | Events table name | ✅ |
-| `AIRTABLE_UPDATES_TABLE_NAME` | Updates table name | ✅ |
-| `AIRTABLE_UPDATES_TABLE_ID` | Updates table ID | ✅ |
-| `AIRTABLE_UPDATES_VIEW_ID` | Updates view ID | ✅ |
-| `NODE_ENV` | Environment (development/production) | ❌ |
-| `LOG_LEVEL` | Logging level (debug/info/warn/error) | ❌ |
-
-## Deployment
-
-### Docker
-
+### Optional
 ```bash
-# Build the image
+AIRTABLE_TABLE_ID=optional_events_table_id
+AIRTABLE_VIEW_ID=optional_events_view_id
+AIRTABLE_UPDATES_TABLE_NAME=Updates
+AIRTABLE_UPDATES_TABLE_ID=optional_updates_table_id
+AIRTABLE_UPDATES_VIEW_ID=optional_updates_view_id
+```
+
+## 🚀 Deployment
+
+### Option 1: Render (Recommended)
+1. Fork this repository
+2. Connect to Render
+3. Set environment variables
+4. Deploy as Worker service
+
+### Option 2: Docker
+```bash
+# Build image
 docker build -t weavebot .
 
-# Run the container
-docker run -d --env-file .env weavebot
+# Run container
+docker run -d \
+  --name weavebot \
+  -e TELEGRAM_BOT_TOKEN=your_token \
+  -e OPENAI_API_KEY=your_key \
+  -e AIRTABLE_API_KEY=your_key \
+  -e AIRTABLE_BASE_ID=your_base_id \
+  -e AIRTABLE_TABLE_NAME=Events \
+  weavebot
 ```
 
-### Render
-
-1. Connect your GitHub repository to Render
-2. Set the environment variables in Render dashboard
-3. Deploy using the included `render.yaml` configuration
-
-The bot will automatically build and deploy on Render using:
-- **Build Command**: `npm ci && npm run build`
-- **Start Command**: `npm start`
-- **Runtime**: Node.js
-
-## Usage Examples
-
-### Processing an Event
-
-Send a message to the bot:
-```
-event: https://example.com/conference-2024
-```
-
-The bot will:
-1. Extract the webpage content as markdown
-2. Use OpenAI to identify event details (title, date, location, etc.)
-3. Save the structured event data to Airtable
-4. Respond with confirmation and processing time
-
-### Adding an Update
-
-Send a message to the bot:
-```
-update: https://example.com/important-announcement
-```
-
-The bot will:
-1. Extract the webpage content
-2. Save it as an update entry in Airtable
-3. Respond with confirmation
-
-### Weekly Summary
-
-Send the command:
-```
-/weeklyweave
-```
-
-The bot will generate a summary of recent events and updates from the past week.
-
-## Testing
-
+### Option 3: Local Development
 ```bash
-# Run all tests
-npm test
+# Install dependencies
+pip install -r requirements.txt
 
-# Run tests with coverage
-npm run test:coverage
+# Install Playwright browsers
+playwright install chromium
 
-# Run tests in watch mode
-npm run test:watch
+# Set environment variables in .env file
+cp .env.example .env
+# Edit .env with your keys
+
+# Run the bot
+python bot.py
 ```
 
-The test suite includes:
-- Service health checks
-- API integration tests  
-- Configuration validation
-- Type safety verification
+## 📊 Data Structure
 
-## Error Handling
+### Events Table (Airtable)
+- **Event Title** (Text)
+- **Description** (Long Text)
+- **Start Datetime** (Date/Time)
+- **End Datetime** (Date/Time)
+- **Location** (Text)
+- **Link** (URL)
 
-The bot includes comprehensive error handling:
+### Updates Table (Airtable)
+- **Content** (Long Text)
+- **Received At** (Date/Time - auto-generated)
 
-- **Service failures** - Graceful degradation with user-friendly messages
-- **Rate limiting** - Built-in retry logic for external APIs
-- **Validation errors** - Clear feedback for invalid inputs
-- **Network issues** - Automatic retries with exponential backoff
+## 🏃‍♂️ Performance
 
-All errors are logged with structured data for debugging.
+- **Cold Start**: ~5-10 seconds
+- **Warm Processing**: ~3-5 seconds
+- **Memory Usage**: ~150-200MB
+- **Browser Overhead**: Minimal (headless Chromium)
 
-## Migration from Python Version
+## 🔄 Migration from ScrapeGraphAI
 
-The original Python implementation has been moved to `old-python-bot/` for reference. Key improvements in the TypeScript version:
+This version **removes ScrapeGraphAI** in favor of a cleaner architecture:
 
-| Aspect | Python Version | TypeScript Version |
-|--------|----------------|-------------------|
-| **Performance** | 30+ seconds | <10 seconds |
-| **Dependencies** | Playwright + browsers | Hosted API only |
-| **Type Safety** | Limited | Full TypeScript + Zod |
-| **Deployment** | Complex (browser install) | Simple (Node.js only) |
-| **Error Handling** | Basic | Comprehensive |
-| **Logging** | Print statements | Structured Winston |
-| **Testing** | Manual | Automated Jest suite |
+### Before (Issues)
+- Complex setup with multiple dependencies
+- ScrapeGraphAI reliability issues
+- Credit-based pricing confusion
+- Performance overhead
 
-## Contributing
+### After (Benefits)
+- Direct Playwright + OpenAI integration
+- Predictable OpenAI-only costs
+- Better error handling and logging
+- Faster processing times
+
+## 🛠️ Development
+
+### Project Structure
+```
+WeaveBot/
+├── bot.py              # Main bot logic
+├── requirements.txt    # Python dependencies
+├── Dockerfile         # Container configuration
+├── render.yaml        # Render deployment config
+└── README.md          # This file
+```
+
+### Key Components
+- **Event Processing**: `scrape_event_data()` + `extract_event_data_with_openai()`
+- **Update Processing**: `scrape_update_data()` + `extract_update_data_with_openai()`
+- **Browser Automation**: `get_html_with_playwright()`
+- **Data Storage**: `save_event_to_airtable()` + `save_update_to_airtable()`
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Bot not responding**
+- Check Telegram bot token
+- Verify internet connectivity
+- Check logs for error messages
+
+**Scraping failures**
+- Some sites block automated access
+- Try different event platforms (Lu.ma, Meetup)
+- Check if URL is accessible manually
+
+**Airtable errors**
+- Verify API key and base ID
+- Check table names match exactly
+- Ensure required fields exist in tables
+
+### Logging
+The bot provides detailed logging for debugging:
+```bash
+# View logs in production
+docker logs weavebot
+
+# Local development
+python bot.py  # Logs print to console
+```
+
+## 📈 Usage Analytics
+
+Track your bot usage:
+- **Successful Events**: Check Airtable Events table
+- **Updates Processed**: Check Airtable Updates table
+- **Error Rates**: Monitor application logs
+- **Response Times**: Built-in timing logs
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
-5. Run `npm run lint` and `npm test`
-6. Submit a pull request
+4. Test thoroughly
+5. Submit a pull request
 
-## License
+## 📄 License
 
-MIT License - see LICENSE file for details.
+MIT License - see LICENSE file for details
 
-## Support
+## 🙋‍♂️ Support
 
 For issues or questions:
-1. Check the logs for detailed error information
-2. Verify all environment variables are set correctly
-3. Test individual services using the health check endpoints
-4. Open an issue with relevant logs and configuration details 
+1. Check the troubleshooting section
+2. Review application logs
+3. Open a GitHub issue with details
+
+---
+
+**Built with ❤️ using Python, Playwright, and OpenAI GPT-4o** 

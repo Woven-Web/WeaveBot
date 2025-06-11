@@ -1,0 +1,5 @@
+python-dotenv>=1.0.1
+playwright>=1.43.0
+python-telegram-bot>=20.0.0
+airtable-python-wrapper>=0.15.0
+openai>=1.0.0 
