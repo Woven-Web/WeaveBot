@@ -624,13 +624,26 @@ async def start_bot():
     message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     application.add_handler(message_handler)
 
+    # Initialize the application
+    await application.initialize()
+    await application.start()
+    
+    # Start polling manually
+    await application.updater.start_polling(drop_pending_updates=True)
+    
     logger.info("🚀 WeaveBot started and listening for messages...")
     
-    # Start polling
-    await application.run_polling(
-        drop_pending_updates=True,
-        stop_signals=[signal.SIGINT, signal.SIGTERM]
-    )
+    try:
+        # Keep the bot running
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Received interrupt signal")
+    finally:
+        # Clean shutdown
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 def main():
     """Start the bot."""
@@ -650,12 +663,15 @@ def main():
         logger.error(f"Missing: {', '.join(missing)}")
         return
 
+    # Simple event loop handling
     try:
         asyncio.run(start_bot())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         sys.exit(1)
 
 if __name__ == '__main__':
