@@ -2,6 +2,8 @@ import os
 import re
 import logging
 import asyncio
+import signal
+import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
@@ -346,8 +348,25 @@ def main():
     message_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     application.add_handler(message_handler)
 
+    # Set up graceful shutdown
+    def signal_handler(sig, frame):
+        logger.info(f"Received signal {sig}. Shutting down gracefully...")
+        application.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     logger.info("Bot started and listening for messages...")
-    application.run_polling()
+    
+    try:
+        application.run_polling(
+            drop_pending_updates=True,  # Clear any pending updates from previous instances
+            close_loop=False
+        )
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main() 

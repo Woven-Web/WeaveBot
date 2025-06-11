@@ -4,6 +4,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: starter
+    maxShutdownDelaySeconds: 30
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
