@@ -1,55 +1,23 @@
-# Environment files
+node_modules
+npm-debug.log
+.npm
 .env
 .env.local
-.env.*.local
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-.coverage
-.pytest_cache/
-
-# Virtual environment
-venv/
-env/
-ENV/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Git
+.env.development.local
+.env.test.local
+.env.production.local
+dist
 .git
 .gitignore
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-*.tmp
-*.temp
-
-# Documentation
 README.md
 *.md
-
-# Build artifacts
-build/
-dist/ 
+.eslintrc*
+.prettierrc*
+jest.config.js
+tsconfig.json
+.vscode
+.idea
+*.log
+coverage
+.nyc_output
+old-python-bot 

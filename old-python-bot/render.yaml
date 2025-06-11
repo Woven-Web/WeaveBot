@@ -1,15 +1,11 @@
 services:
   - type: worker
-    name: weavebot-typescript
-    runtime: node
+    name: weave-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
     plan: starter
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
+    maxShutdownDelaySeconds: 30
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: LOG_LEVEL
-        value: info
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID

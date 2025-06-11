@@ -1,23 +1,40 @@
-# Use official Playwright image with browsers pre-installed
-FROM mcr.microsoft.com/playwright/python:v1.52.0-focal
+# Use Node.js 18 LTS as base image
+FROM node:18-alpine
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install system dependencies if needed
+RUN apk add --no-cache \
+    ca-certificates \
+    && update-ca-certificates
 
-# Ensure Playwright browsers are properly installed
-RUN playwright install chromium
-RUN playwright install-deps chromium
+# Copy package files
+COPY package*.json ./
 
-# Copy the bot code
-COPY bot.py .
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
 
-# Set environment variables for production
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Copy source code
+COPY . .
 
-# Add a small delay on startup to ensure old instances are stopped, then run the bot
-CMD ["sh", "-c", "sleep 10 && python bot.py"] 
+# Build TypeScript
+RUN npm run build
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S weavebot -u 1001
+
+# Change ownership of the app directory
+RUN chown -R weavebot:nodejs /app
+USER weavebot
+
+# Expose port (if needed for health checks)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "console.log('Health check passed')" || exit 1
+
+# Start the bot
+CMD ["npm", "start"] 
