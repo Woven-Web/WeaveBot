@@ -250,6 +250,22 @@ async def extract_event_data_with_openai(html_content: str, url: str) -> dict:
     # Extract only relevant content to reduce tokens
     relevant_content = extract_relevant_content(html_content, url)
     
+    # Validate the extracted content
+    validation = validate_extracted_content(relevant_content, html_content)
+    logger.info(f"Content validation - Score: {validation['confidence_score']}/100, Missing: {validation['missing_elements']}")
+    
+    # If validation score is low, try to extract more content
+    if validation['confidence_score'] < 50:
+        logger.warning(f"Low confidence score ({validation['confidence_score']}), extracting more content")
+        # Try with a larger limit for low-confidence extractions
+        soup = BeautifulSoup(html_content, 'html.parser')
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
+            tag.decompose()
+        body_text = soup.get_text()
+        body_text = re.sub(r'\s+', ' ', body_text).strip()
+        relevant_content = body_text[:8000]  # Larger fallback limit
+        logger.info(f"Fallback extraction: {len(relevant_content)} characters")
+    
     user_prompt = f"""Today's date is {today_date}. 
 
     Please extract event information from this content from {url}:
@@ -686,35 +702,98 @@ def extract_relevant_content(html_content: str, url: str) -> str:
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
         
+        # First, try to extract structured data (JSON-LD, microdata)
+        structured_data = []
+        
+        # Extract JSON-LD structured data
+        json_scripts = soup.find_all('script', type='application/ld+json')
+        for script in json_scripts:
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, dict) and data.get('@type') in ['Event', 'SocialEvent', 'BusinessEvent']:
+                    structured_data.append(json.dumps(data, indent=2))
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and item.get('@type') in ['Event', 'SocialEvent', 'BusinessEvent']:
+                            structured_data.append(json.dumps(item, indent=2))
+            except:
+                pass
+        
+        # Extract event meta tags
+        meta_content = []
+        meta_tags = soup.find_all('meta')
+        for meta in meta_tags:
+            name = meta.get('name', '').lower()
+            property_attr = meta.get('property', '').lower()
+            content = meta.get('content', '')
+            
+            if content and (
+                'event' in name or 'event' in property_attr or
+                'date' in name or 'time' in name or 'location' in name or
+                'venue' in name or 'title' in name or 'description' in name or
+                name.startswith('og:') or name.startswith('twitter:')
+            ):
+                meta_content.append(f"{name or property_attr}: {content}")
+        
         # Remove unnecessary elements
         for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
             tag.decompose()
         
-        # Event-specific selectors to prioritize
+        # Enhanced event-specific selectors with more patterns
         event_selectors = [
+            # Structured data selectors (higher priority)
+            '[itemtype*="Event"]', '[itemtype*="event"]',
+            '[class*="schema"]', '[id*="schema"]',
+            
             # Common event page patterns
             '[class*="event"]', '[id*="event"]',
             '[class*="title"]', '[id*="title"]', 'h1', 'h2', 'h3',
-            '[class*="description"]', '[id*="description"]',
+            '[class*="description"]', '[id*="description"]', '[class*="summary"]',
             '[class*="date"]', '[id*="date"]', '[class*="time"]', '[id*="time"]',
+            '[class*="datetime"]', '[id*="datetime"]', '[datetime]',
             '[class*="location"]', '[id*="location"]', '[class*="venue"]', '[id*="venue"]',
+            '[class*="address"]', '[id*="address"]',
             '[class*="when"]', '[id*="when"]', '[class*="where"]', '[id*="where"]',
-            '[class*="detail"]', '[id*="detail"]',
+            '[class*="detail"]', '[id*="detail"]', '[class*="info"]', '[id*="info"]',
+            
             # Platform-specific selectors
             '[data-testid*="event"]', '[data-testid*="date"]', '[data-testid*="location"]',
+            '[data-cy*="event"]', '[data-cy*="date"]', '[data-cy*="location"]',
+            
             # Meetup.com specific
-            '[class*="eventTitle"]', '[class*="eventDescription"]',
+            '[class*="eventTitle"]', '[class*="eventDescription"]', '[class*="eventDetails"]',
+            '[class*="eventTimeDisplay"]', '[class*="venueDisplay"]',
+            
             # Eventbrite specific  
-            '[class*="event-title"]', '[class*="event-description"]',
+            '[class*="event-title"]', '[class*="event-description"]', '[class*="event-details"]',
+            '[class*="event-date"]', '[class*="event-time"]', '[class*="event-location"]',
+            
             # Lu.ma specific
-            '[class*="event-name"]', '[class*="event-info"]',
-            # Generic content areas
+            '[class*="event-name"]', '[class*="event-info"]', '[class*="event-description"]',
+            '[class*="event-when"]', '[class*="event-where"]', '[class*="event-details"]',
+            
+            # Facebook Events
+            '[data-testid*="event"]', '[role="article"]',
+            
+            # Time and date specific
+            'time', '[datetime]', '[class*="calendar"]', '[id*="calendar"]',
+            
+            # Generic content areas (lower priority)
             'main', 'article', '[role="main"]', '.content', '#content',
-            '.container', '.wrapper'
+            '.container', '.wrapper', '.page-content'
         ]
         
         relevant_content = []
         seen_text = set()
+        
+        # Add structured data first (highest priority)
+        if structured_data:
+            relevant_content.extend(structured_data)
+            logger.info(f"Found {len(structured_data)} structured data elements")
+        
+        # Add meta tag content
+        if meta_content:
+            relevant_content.append("META TAGS: " + " | ".join(meta_content[:10]))  # Limit meta tags
         
         # Extract content from prioritized selectors
         for selector in event_selectors:
@@ -725,10 +804,11 @@ def extract_relevant_content(html_content: str, url: str) -> str:
                     if text and len(text) > 10 and text not in seen_text:
                         seen_text.add(text)
                         relevant_content.append(text)
-                        # Limit total content
-                        if len(' '.join(relevant_content)) > 4000:
+                        # Flexible limit - allow more content if we have good structured data
+                        max_content = 6000 if structured_data else 4000
+                        if len(' '.join(relevant_content)) > max_content:
                             break
-                if len(' '.join(relevant_content)) > 4000:
+                if len(' '.join(relevant_content)) > (6000 if structured_data else 4000):
                     break
             except:
                 continue
@@ -746,9 +826,18 @@ def extract_relevant_content(html_content: str, url: str) -> str:
         
         # Final cleanup
         extracted_content = re.sub(r'\s+', ' ', extracted_content)
-        extracted_content = extracted_content[:4000]  # Hard limit
+        
+        # Dynamic limit based on content quality
+        if structured_data:
+            extracted_content = extracted_content[:6000]  # Allow more for structured data
+        else:
+            extracted_content = extracted_content[:4000]  # Conservative limit otherwise
         
         logger.info(f"Extracted {len(extracted_content)} characters from {len(html_content)} characters ({len(extracted_content)/len(html_content)*100:.1f}% reduction)")
+        if structured_data:
+            logger.info(f"Found structured data - using extended {len(extracted_content)} char limit")
+        if meta_content:
+            logger.info(f"Extracted {len(meta_content)} relevant meta tags")
         
         return extracted_content
         
@@ -759,6 +848,79 @@ def extract_relevant_content(html_content: str, url: str) -> str:
         text = soup.get_text()
         text = re.sub(r'\s+', ' ', text)
         return text[:4000]
+
+def validate_extracted_content(extracted_content: str, original_html: str) -> dict:
+    """Validate if extracted content contains essential event information."""
+    
+    validation_results = {
+        'has_title': False,
+        'has_date': False,
+        'has_time': False,
+        'has_location': False,
+        'confidence_score': 0,
+        'missing_elements': [],
+        'recommendations': []
+    }
+    
+    content_lower = extracted_content.lower()
+    
+    # Check for title indicators
+    title_patterns = ['event', 'meetup', 'conference', 'workshop', 'summit', 'expo', 'festival']
+    if any(pattern in content_lower for pattern in title_patterns):
+        validation_results['has_title'] = True
+        validation_results['confidence_score'] += 25
+    else:
+        validation_results['missing_elements'].append('event_title')
+    
+    # Check for date patterns
+    date_patterns = [
+        r'\d{4}-\d{2}-\d{2}',  # ISO date
+        r'\d{1,2}/\d{1,2}/\d{4}',  # MM/DD/YYYY
+        r'\d{1,2}-\d{1,2}-\d{4}',  # MM-DD-YYYY
+        r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',  # Month names
+        r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)',  # Day names
+        r'\d{1,2}(st|nd|rd|th)',  # Ordinal dates
+    ]
+    if any(re.search(pattern, content_lower) for pattern in date_patterns):
+        validation_results['has_date'] = True
+        validation_results['confidence_score'] += 25
+    else:
+        validation_results['missing_elements'].append('date_info')
+    
+    # Check for time patterns
+    time_patterns = [
+        r'\d{1,2}:\d{2}',  # HH:MM
+        r'\d{1,2}\s*(am|pm)',  # 12-hour format
+        r'(morning|afternoon|evening|night)',  # Time of day
+    ]
+    if any(re.search(pattern, content_lower) for pattern in time_patterns):
+        validation_results['has_time'] = True
+        validation_results['confidence_score'] += 25
+    else:
+        validation_results['missing_elements'].append('time_info')
+    
+    # Check for location patterns
+    location_patterns = [
+        r'\d+\s+\w+\s+(street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd)',  # Street address
+        'address', 'venue', 'location', 'room', 'building', 'center', 'hall',
+        'online', 'virtual', 'zoom', 'teams', 'webinar'
+    ]
+    if any(pattern in content_lower for pattern in location_patterns):
+        validation_results['has_location'] = True
+        validation_results['confidence_score'] += 25
+    else:
+        validation_results['missing_elements'].append('location_info')
+    
+    # Generate recommendations based on missing elements
+    if validation_results['confidence_score'] < 75:
+        if not validation_results['has_date']:
+            validation_results['recommendations'].append('Consider increasing content limit for date extraction')
+        if not validation_results['has_location']:
+            validation_results['recommendations'].append('Consider extracting more location-related content')
+        if not validation_results['has_time']:
+            validation_results['recommendations'].append('Consider looking for time information in additional selectors')
+    
+    return validation_results
 
 if __name__ == '__main__':
     main()
