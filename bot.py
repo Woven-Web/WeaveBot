@@ -924,7 +924,7 @@ async def start_bot():
     start_handler = CommandHandler('start', start)
     application.add_handler(start_handler)
 
-        weave_handler = CommandHandler('weeklyweave', weekly_weave)
+    weave_handler = CommandHandler('weeklyweave', weekly_weave)
     application.add_handler(weave_handler)
     
     # Handler for when bot is added to groups
